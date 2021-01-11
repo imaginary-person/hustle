@@ -19,6 +19,8 @@
 #define HUSTLE_OFFLINE_BLOCK_H
 
 #include <arrow/api.h>
+#include <map>
+#include <iostream>
 #include "utils/bit_utils.h"
 
 #define BLOCK_SIZE (1 << 20)
@@ -58,6 +60,12 @@
  */
 
 namespace hustle::storage {
+
+struct BlockInfo {
+  int32_t blockId;
+  int32_t rowNum;
+};
+
 class Block {
  public:
   //
@@ -150,6 +158,9 @@ class Block {
    */
   bool get_valid(unsigned int row_index) const;
 
+  bool get_valid(std::shared_ptr<arrow::ArrayData> valid, 
+                                      unsigned int row_index) const;
+
   //
   /**
    * Set the valid bit to val at row_index
@@ -179,6 +190,10 @@ class Block {
    * @param bytes Number of bytes added to the Block.
    */
   void increment_num_bytes(unsigned int bytes);
+
+  std::vector<std::shared_ptr<arrow::ArrayData>> get_columns() {
+      return columns;
+  }
 
   /**
    * Get the Block's RecordBatch
@@ -210,6 +225,18 @@ class Block {
 
   int get_num_cols() const;
 
+  int get_fixed_record_width() const {
+      return fixed_record_width;
+  }
+
+  int get_capacity() {
+      return capacity;
+  }
+
+  std::map<int, int>& get_row_id_map() {
+      return row_id_map;
+  }
+
   /**
    * Insert a record into the Block.
    *
@@ -220,7 +247,7 @@ class Block {
    * should be listed in the same order as they appear in the Block's schema.
    * @return True if insertion was successful, false otherwise.
    */
-  bool insert_record(uint8_t *record, int32_t *byte_widths);
+  int insert_record(uint8_t *record, int32_t *byte_widths);
 
   /**
    * Insert one or more records into the Block as a vector of ArrayData.
@@ -237,12 +264,29 @@ class Block {
   bool insert_records(
       std::vector<std::shared_ptr<arrow::ArrayData>> column_data);
 
+  void insert_records(
+      std::map<int, BlockInfo>& block_map,
+      std::map<int, int>& row_map,
+      std::shared_ptr<arrow::Array> valid_column,
+      std::vector<std::shared_ptr<arrow::ArrayData>> column_data);
+
   bool insert_record(std::vector<std::string_view> record,
                      int32_t *byte_widths);
 
   bool insert_records(
       std::vector<std::shared_ptr<arrow::ArrayData>> column_data,
       int32_t offset, int64_t length);
+
+  template <typename field_size>
+  inline void update_value_in_column(int col_num, int row_num, uint8_t *record_value,
+                                   int byte_width) {
+    auto *dest = columns[col_num]->GetMutableValues<field_size>(1, row_num);
+    uint8_t *value = (uint8_t *)calloc(sizeof(field_size), sizeof(uint8_t));
+    std::memcpy(value, utils::reverse_bytes(record_value, byte_width),
+                byte_width);
+    std::memcpy(dest, value, sizeof(field_size));
+    free(value);
+  }
 
   void truncate_buffers();
 
@@ -256,6 +300,8 @@ class Block {
   std::vector<int> column_sizes;
 
   std::vector<int32_t> field_sizes_;
+
+  std::map<int, int> row_id_map;
 
   /**
    * Compute the number of bytes in the block. This function is only called
@@ -273,6 +319,8 @@ class Block {
 
   // Initialized to BLOCK_SIZE
   int capacity;
+
+  int fixed_record_width;
 
   // Number of rows in the Block, including valid and invalid rows.
   int num_rows;

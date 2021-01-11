@@ -14,9 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+#ifndef HUSTLE_MEMLOG_H
+#define HUSTLE_MEMLOG_H
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define MEMLOG_HUSTLE_UPDATE 1
+#define MEMLOG_HUSTLE_INSERT 2
+#define MEMLOG_HUSTLE_DELETE 3
 
 #define MEMLOG_INIT_SIZE 100
 #define MEMLOG_OK 0
@@ -43,12 +51,22 @@ struct DBRecordList {
   int curr_size;
 };
 
+struct UpdateMetaInfo {
+  int tableId;
+  int colNum;
+};
+
 struct DBRecord {
-  const void *data;
+  int mode;
+  int rowId;
   int nData;
+  const void *data;
+  int nUpdateMetaInfo;
+  struct UpdateMetaInfo* updateMetaInfo;
   struct DBRecord *next_record;
 };
 
+typedef struct UpdateMetaInfo UpdateMetaInfo;
 typedef int Status;
 typedef struct DBRecord DBRecord;
 typedef struct DBRecordList DBRecordList;
@@ -75,7 +93,8 @@ void memlog_add_table_mapping(int db_id, int root_page_id, char *table_name);
  * data - SQLite's data record format with header in the begining
  * nData - the size of the data
  * */
-DBRecord *hustle_memlog_create_record(const void *data, int nData);
+DBRecord *hustle_memlog_create_record(int mode, int rowId, 
+                                      const void *data, int nData);
 
 /**
  * Insert's the record to the memlog and grows the array size, if the table id
@@ -124,3 +143,5 @@ Status hustle_memlog_free(HustleMemLog *mem_log);
 #ifdef __cplusplus
 }
 #endif
+
+#endif  // HUSTLE_MEMLOG_H
